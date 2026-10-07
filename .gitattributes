@@ -1,0 +1,6 @@
+* -text
+*.bin binary
+*.rtxlib binary
+*.spv binary
+*.air binary
+*.cubin binary

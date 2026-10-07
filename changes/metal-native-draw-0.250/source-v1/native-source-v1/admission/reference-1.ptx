@@ -1,0 +1,157 @@
+.version 7.1
+.target sm_86
+.address_size 64
+
+.visible .entry rtx_entry(
+    .param .u64 arg0,
+    .param .u64 arg1,
+    .param .u64 arg2
+)
+.reqntid 64, 1, 1
+{
+    .reg .b64 %r0;
+    .reg .b64 %r1;
+    .reg .b64 %r2;
+    .reg .b64 %r3;
+    .reg .b64 %r4;
+    .reg .b64 %r5;
+    .reg .b32 %r6;
+    .reg .b32 %r7;
+    .reg .b32 %r8;
+    .reg .b32 %r9;
+    .reg .b32 %r10;
+    .reg .b32 %r11;
+    .reg .b32 %r12;
+    .reg .b32 %r13;
+    .reg .b32 %r14;
+    .reg .b32 %r15;
+    .reg .f32 %f16;
+    .reg .f32 %f17;
+    .reg .f32 %f18;
+    .reg .f32 %f19;
+    .reg .b64 %r20;
+    .reg .b64 %r21;
+    .reg .b64 %r22;
+    .reg .b64 %r23;
+    .reg .f32 %f24;
+    .reg .b64 %r25;
+    .reg .b64 %r26;
+    .reg .b64 %r27;
+    .reg .f32 %f28;
+    .reg .b32 %r29;
+    .reg .pred %p30;
+    .reg .f32 %f31;
+    .reg .f32 %f32;
+    .reg .f32 %f33;
+    .reg .f32 %f34;
+    .reg .f32 %f35;
+    .reg .f32 %f36;
+    .reg .f32 %f37;
+    .reg .f32 %f38;
+    .reg .b32 %r39;
+    .reg .pred %p40;
+    .reg .f32 %f41;
+    .reg .b64 %r42;
+    .reg .b64 %r43;
+    .reg .b64 %r44;
+    .reg .f32 %f45;
+    .reg .f32 %f46;
+    .reg .b32 %r47;
+    .reg .f32 %f48;
+    .reg .f32 %f49;
+    .reg .b32 %r50;
+    .reg .f32 %f51;
+    .reg .f32 %f52;
+    .reg .f32 %f53;
+    .reg .f32 %f54;
+    ld.param.u64 %r0, [arg0];
+    cvta.to.global.u64 %r1, %r0;
+    ld.param.u64 %r2, [arg1];
+    cvta.to.global.u64 %r3, %r2;
+    ld.param.u64 %r4, [arg2];
+    cvta.to.global.u64 %r5, %r4;
+    mov.u32 %r6, %ctaid.x;
+    mov.u32 %r7, %tid.x;
+    mad.lo.u32 %r8, %r6, 64, %r7;
+    mov.u32 %r9, %ctaid.y;
+    mov.u32 %r10, %tid.y;
+    mad.lo.u32 %r11, %r9, 1, %r10;
+    mov.u32 %r12, %ctaid.z;
+    mov.u32 %r13, %tid.z;
+    mad.lo.u32 %r14, %r12, 1, %r13;
+    BB0:
+    cvt.u64.u32 %r20, %r8;
+    mov.b64 %r21, %r20;
+    mul.lo.u64 %r22, %r21, 4;
+    add.u64 %r23, %r1, %r22;
+    ld.global.f32 %f24, [%r23];
+    mov.b64 %r25, %r20;
+    mul.lo.u64 %r26, %r25, 4;
+    add.u64 %r27, %r3, %r26;
+    ld.global.f32 %f28, [%r27];
+    and.b32 %r29, %r8, 3;
+    setp.eq.u32 %p30, %r29, 0;
+    @%p30 bra BB0_to_BB4;
+    bra BB0_to_BB1;
+    BB1:
+    mul.rn.ftz.f32 %f31, %f16, 0f3f000000;
+    mul.rn.ftz.f32 %f32, %f17, 0f40000000;
+    cvt.rpi.ftz.f32.f32 %f33, %f31;
+    cvt.rpi.ftz.f32.f32 %f34, %f32;
+    cvt.rni.ftz.f32.f32 %f35, %f17;
+    cvt.rni.ftz.f32.f32 %f36, %f16;
+    add.rn.ftz.f32 %f37, %f33, %f35;
+    add.rn.ftz.f32 %f38, %f34, %f36;
+    add.u32 %r39, %r15, 1;
+    setp.eq.u32 %p40, %r39, %r29;
+    @%p40 bra BB1_to_BB3;
+    bra BB1_to_BB2;
+    BB2:
+    bra BB2_to_BB1;
+    BB3:
+    bra BB3_to_BB4;
+    BB4:
+    bra BB4_to_BB5;
+    BB5:
+    sub.rn.ftz.f32 %f41, %f18, %f19;
+    mov.b64 %r42, %r20;
+    mul.lo.u64 %r43, %r42, 4;
+    add.u64 %r44, %r5, %r43;
+    st.global.f32 [%r44], %f41;
+    ret;
+    BB0_to_BB4:
+    mov.f32 %f45, %f24;
+    mov.f32 %f46, %f28;
+    mov.f32 %f18, %f45;
+    mov.f32 %f19, %f46;
+    bra BB4;
+    BB0_to_BB1:
+    mov.b32 %r47, 0;
+    mov.f32 %f48, %f24;
+    mov.f32 %f49, %f28;
+    mov.b32 %r15, %r47;
+    mov.f32 %f16, %f48;
+    mov.f32 %f17, %f49;
+    bra BB1;
+    BB1_to_BB3:
+    bra BB3;
+    BB1_to_BB2:
+    bra BB2;
+    BB2_to_BB1:
+    mov.b32 %r50, %r39;
+    mov.f32 %f51, %f37;
+    mov.f32 %f52, %f38;
+    mov.b32 %r15, %r50;
+    mov.f32 %f16, %f51;
+    mov.f32 %f17, %f52;
+    bra BB1;
+    BB3_to_BB4:
+    mov.f32 %f53, %f37;
+    mov.f32 %f54, %f38;
+    mov.f32 %f18, %f53;
+    mov.f32 %f19, %f54;
+    bra BB4;
+    BB4_to_BB5:
+    bra BB5;
+    ret;
+}

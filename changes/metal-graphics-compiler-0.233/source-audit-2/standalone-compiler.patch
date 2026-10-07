@@ -1,0 +1,1029 @@
+--- a/meson.build
++++ b/meson.build
+@@ -312,6 +312,11 @@
+ with_imagination_srv = get_option('imagination-srv')
+ with_microsoft_vk = _vulkan_drivers.contains('microsoft-experimental')
+ with_nouveau_vk = _vulkan_drivers.contains('nouveau')
++with_nak_standalone = get_option('nak-standalone')
++with_nak = with_nouveau_vk or with_nak_standalone
++if with_nak_standalone and (with_nouveau_vk or with_gallium_nouveau)
++  error('Use a separate standalone NAK build without Nouveau GPU drivers')
++endif
+ with_asahi_vk = _vulkan_drivers.contains('asahi')
+ with_gfxstream_vk = _vulkan_drivers.contains('gfxstream')
+ with_kosmickrisp_vk = _vulkan_drivers.contains('kosmickrisp')
+@@ -389,7 +394,7 @@
+   with_intel_tools,
+   with_intel_vk,
+ ].contains(true)
+-with_any_nouveau = with_gallium_nouveau or with_nouveau_vk
++with_any_nouveau = with_gallium_nouveau or with_nak
+ 
+ # needed in the loader
+ if with_nouveau_vk
+@@ -863,7 +868,7 @@
+ endif
+ 
+ with_virtgpu_kumquat = get_option('virtgpu_kumquat') and with_gfxstream_vk
+-if with_gallium_rusticl or with_nouveau_vk or with_tools.contains('etnaviv') or with_virtgpu_kumquat or with_panfrost_rust
++if with_gallium_rusticl or with_nak or with_tools.contains('etnaviv') or with_virtgpu_kumquat or with_panfrost_rust
+   # rust.bindgen() does not pass `--rust-target` to bindgen until 1.7.0.
+   if meson.version().version_compare('< 1.7.0')
+     error('Mesa Rust support requires Meson 1.7.0 or newer')
+@@ -993,6 +998,7 @@
+ endif
+ 
+ with_gfx_compute = [
++  with_nak_standalone,
+   with_any_opengl,
+   with_any_vk,
+   with_clc,
+--- a/meson.options
++++ b/meson.options
+@@ -915,3 +915,6 @@
+   value : false,
+   description : 'Build panfrost Rust components.'
+ )
++
++option('nak-standalone', type : 'boolean', value : false,
++       description : 'Build the NAK shader compiler without a GPU runtime')
+--- a/src/compiler/meson.build
++++ b/src/compiler/meson.build
+@@ -73,6 +73,6 @@
+ endif
+ subdir('isaspec')
+ 
+-if with_nouveau_vk or with_tools.contains('etnaviv') or with_panfrost_rust
++if with_nak or with_tools.contains('etnaviv') or with_panfrost_rust
+   subdir('rust')
+ endif
+--- a/src/nouveau/compiler/meson.build
++++ b/src/nouveau/compiler/meson.build
+@@ -40,11 +40,19 @@
+   idep_nil_h,
+ ]
+ 
++_nak_bindgen_c_args = []
++_nak_hw_deps = []
++if with_nak_standalone
++  _nak_bindgen_c_args += '-DNAK_STANDALONE'
++else
++  _nak_hw_deps += [dep_libdrm, idep_nouveau_ws]
++endif
++
+ _nak_bindings_rs = rust.bindgen(
+   input : ['nak_bindings.h'],
+   output : 'nak_bindings.rs',
+   c_args : [
+-    pre_args,
++    pre_args, _nak_bindgen_c_args,
+   ],
+   args : [
+     bindgen_output_args,
+@@ -66,8 +74,7 @@
+     '--with-derive-default',
+   ],
+   dependencies : [
+-    dep_libdrm,
+-    idep_nouveau_ws,
++    _nak_hw_deps,
+     libnak_deps,
+   ],
+ )
+@@ -119,7 +126,7 @@
+ #
+ # Also, don't build on Android because we do cross-builds and, unlike most
+ # tests, these depend on libdrm and that confuses the build system.
+-if with_tests and get_option('b_sanitize') == 'none' and not with_platform_android
++if with_tests and get_option('b_sanitize') == 'none' and not with_platform_android and not with_nak_standalone
+   rust.test(
+     'nak',
+     _libnak_rs,
+@@ -169,3 +176,21 @@
+   include_directories : include_directories('.'),
+   link_with : _libnak,
+ )
++
++if with_nak_standalone
++  _standalone_constants = custom_target(
++    'standalone_constants',
++    input : files('../vulkan/nvk_private.h', '../vulkan/nvk_descriptor_types.h',
++                  '../vulkan/nvk_cmd_buffer.h', '../vulkan/nvk_shader.c'),
++    output : 'standalone_constants.c',
++    command : [prog_python, files('standalone_constants.py'), '@INPUT@', '@OUTPUT@'],
++  )
++  executable(
++    'nak_standalone',
++    [files('nak_standalone.c'), _standalone_constants],
++    include_directories : [inc_include, inc_src],
++    dependencies : [idep_nak, idep_vtn, idep_nir, idep_mesautil, idep_nvidia_headers, dep_m],
++    link_args : ['-Wl,--no-undefined'],
++    install : false,
++  )
++endif
+--- a/src/nouveau/compiler/nak/from_nir.rs
++++ b/src/nouveau/compiler/nak/from_nir.rs
+@@ -1927,7 +1927,7 @@
+ 
+         let mask = tex.def.components_read();
+         let mut mask = u8::try_from(mask).unwrap();
+-        if flags.is_sparse() {
++        if nir_flag_bool(flags.is_sparse()) {
+             mask &= !(1 << (tex.def.num_components - 1));
+             if mask == 0 {
+                 // This can happen if only the sparse predicate is used.  In
+@@ -1951,7 +1951,7 @@
+             dsts[0] = dst.clone().into();
+         }
+ 
+-        let fault = if flags.is_sparse() {
++        let fault = if nir_flag_bool(flags.is_sparse()) {
+             Some(b.alloc_ssa(RegFile::Pred))
+         } else {
+             None
+@@ -1965,7 +1965,7 @@
+                 tex: tex_ref,
+                 src: src,
+                 query: TexQuery::Dimension,
+-                nodep: flags.nodep(),
++                nodep: nir_flag_bool(flags.nodep()),
+                 channel_mask,
+             });
+         } else if tex.op == nir_texop_tex_type_nv {
+@@ -1976,7 +1976,7 @@
+                 tex: tex_ref,
+                 src: src,
+                 query: TexQuery::TextureType,
+-                nodep: flags.nodep(),
++                nodep: nir_flag_bool(flags.nodep()),
+                 channel_mask,
+             });
+         } else if tex.op == nir_texop_sample_pos_nv {
+@@ -1987,7 +1987,7 @@
+                 tex: tex_ref,
+                 src: src,
+                 query: TexQuery::SamplerPos,
+-                nodep: flags.nodep(),
++                nodep: nir_flag_bool(flags.nodep()),
+                 channel_mask,
+             });
+         } else {
+@@ -2030,8 +2030,8 @@
+             if tex.op == nir_texop_txd {
+                 assert!(lod_mode == TexLodMode::Auto);
+                 assert!(offset_mode != TexOffsetMode::PerPx);
+-                assert!(!flags.has_z_cmpr());
+-                assert!(!flags.scalar());
++                assert!(!nir_flag_bool(flags.has_z_cmpr()));
++                assert!(!nir_flag_bool(flags.scalar()));
+                 b.push_op(OpTxd {
+                     dsts: dsts,
+                     fault: fault.into(),
+@@ -2040,20 +2040,20 @@
+                     dim: dim,
+                     offset_mode,
+                     mem_eviction_priority: MemEvictionPriority::Normal,
+-                    nodep: flags.nodep(),
++                    nodep: nir_flag_bool(flags.nodep()),
+                     channel_mask,
+                 });
+             } else if tex.op == nir_texop_lod {
+                 assert!(lod_mode == TexLodMode::Auto);
+                 assert!(offset_mode == TexOffsetMode::None);
+-                assert!(!flags.scalar());
++                assert!(!nir_flag_bool(flags.scalar()));
+                 b.push_op(OpTmml {
+                     dsts: dsts,
+                     tex: tex_ref,
+                     srcs: srcs,
+                     dim: dim,
+                     deriv_mode,
+-                    nodep: flags.nodep(),
++                    nodep: nir_flag_bool(flags.nodep()),
+                     channel_mask,
+                 });
+             } else if tex.op == nir_texop_txf || tex.op == nir_texop_txf_ms {
+@@ -2068,9 +2068,9 @@
+                     is_ms: tex.op == nir_texop_txf_ms,
+                     offset_mode,
+                     mem_eviction_priority: MemEvictionPriority::Normal,
+-                    nodep: flags.nodep(),
++                    nodep: nir_flag_bool(flags.nodep()),
+                     channel_mask,
+-                    scalar: flags.scalar(),
++                    scalar: nir_flag_bool(flags.scalar()),
+                 });
+             } else if tex.op == nir_texop_tg4 {
+                 b.push_op(OpTld4 {
+@@ -2081,11 +2081,11 @@
+                     dim: dim,
+                     comp: tex.component().try_into().unwrap(),
+                     offset_mode: offset_mode,
+-                    z_cmpr: flags.has_z_cmpr(),
++                    z_cmpr: nir_flag_bool(flags.has_z_cmpr()),
+                     mem_eviction_priority: MemEvictionPriority::Normal,
+-                    nodep: flags.nodep(),
++                    nodep: nir_flag_bool(flags.nodep()),
+                     channel_mask,
+-                    scalar: flags.scalar(),
++                    scalar: nir_flag_bool(flags.scalar()),
+                 });
+             } else {
+                 assert!(offset_mode != TexOffsetMode::PerPx);
+@@ -2097,12 +2097,12 @@
+                     dim: dim,
+                     lod_mode: lod_mode,
+                     deriv_mode,
+-                    z_cmpr: flags.has_z_cmpr(),
++                    z_cmpr: nir_flag_bool(flags.has_z_cmpr()),
+                     offset_mode,
+                     mem_eviction_priority: MemEvictionPriority::Normal,
+-                    nodep: flags.nodep(),
++                    nodep: nir_flag_bool(flags.nodep()),
+                     channel_mask,
+-                    scalar: flags.scalar(),
++                    scalar: nir_flag_bool(flags.scalar()),
+                 });
+             }
+         }
+@@ -2110,7 +2110,7 @@
+         let mut di = 0_usize;
+         let mut nir_dst = Vec::new();
+         for i in 0..tex.def.num_components() {
+-            if flags.is_sparse() && i == tex.def.num_components - 1 {
++            if nir_flag_bool(flags.is_sparse()) && i == tex.def.num_components - 1 {
+                 let Some(fault) = fault else {
+                     panic!("No fault value for sparse op");
+                 };
+@@ -2253,14 +2253,14 @@
+                 let flags: nak_nir_attr_io_flags =
+                     unsafe { std::mem::transmute_copy(&flags) };
+ 
+-                assert!(!flags.patch());
++                assert!(!nir_flag_bool(flags.patch()));
+ 
+                 let dst = b.alloc_ssa(RegFile::GPR);
+                 b.push_op(OpAL2P {
+                     dst: dst.into(),
+                     offset,
+                     addr,
+-                    output: flags.output(),
++                    output: nir_flag_bool(flags.output()),
+                     comps: 1,
+                 });
+                 self.set_dst(&intrin.def, dst.into());
+@@ -2274,13 +2274,13 @@
+                 let flags = intrin.flags();
+                 let flags: nak_nir_attr_io_flags =
+                     unsafe { std::mem::transmute_copy(&flags) };
+-                assert!(!flags.patch() || !flags.phys());
++                assert!(!nir_flag_bool(flags.patch()) || !nir_flag_bool(flags.phys()));
+ 
+                 if let ShaderIoInfo::Vtg(io) = &mut self.info.io {
+-                    if flags.patch() {
++                    if nir_flag_bool(flags.patch()) {
+                         match &mut self.info.stage {
+                             ShaderStageInfo::TessellationInit(stage) => {
+-                                assert!(flags.output());
++                                assert!(nir_flag_bool(flags.output()));
+                                 stage.per_patch_attribute_count = max(
+                                     stage.per_patch_attribute_count,
+                                     (range.end / 4).try_into().unwrap(),
+@@ -2290,7 +2290,7 @@
+                             _ => panic!("Patch I/O not supported"),
+                         }
+                     } else {
+-                        if flags.output() {
++                        if nir_flag_bool(flags.output()) {
+                             if intrin.intrinsic == nir_intrinsic_ast_nv {
+                                 io.mark_store_req(range.clone());
+                             }
+@@ -2317,9 +2317,9 @@
+                         addr,
+                         offset,
+                         comps,
+-                        patch: flags.patch(),
+-                        output: flags.output(),
+-                        phys: flags.phys(),
++                        patch: nir_flag_bool(flags.patch()),
++                        output: nir_flag_bool(flags.output()),
++                        phys: nir_flag_bool(flags.phys()),
+                     });
+                     self.set_dst(&intrin.def, dst);
+                 } else if intrin.intrinsic == nir_intrinsic_ast_nv {
+@@ -2334,8 +2334,8 @@
+                         addr,
+                         offset,
+                         comps,
+-                        patch: flags.patch(),
+-                        phys: flags.phys(),
++                        patch: nir_flag_bool(flags.patch()),
++                        phys: nir_flag_bool(flags.phys()),
+                     });
+                 } else {
+                     panic!("Invalid VTG I/O intrinsic");
+@@ -2727,8 +2727,8 @@
+                     params,
+                     mode,
+                     round,
+-                    is_2d: flags.is_2d(),
+-                    is_s32: flags.is_s32(),
++                    is_2d: nir_flag_bool(flags.is_2d()),
++                    is_s32: nir_flag_bool(flags.is_s32()),
+                     imm: 0,
+                 });
+                 let final_dst =
+@@ -2793,7 +2793,7 @@
+                     }
+                 };
+ 
+-                let mode = if flags.params_from_src1() {
++                let mode = if nir_flag_bool(flags.params_from_src1()) {
+                     IMadSpMode::FromSrc1
+                 } else {
+                     IMadSpMode::Explicit([
+@@ -3192,18 +3192,18 @@
+                 if matches!(access_type, IsbeAccessType::Attribute)
+                     && !range.is_empty()
+                 {
+-                    if flags.per_primitive() {
++                    if nir_flag_bool(flags.per_primitive()) {
+                         let ShaderStageInfo::Mesh(stage) = &mut self.info.stage
+                         else {
+                             panic!("isberd_nv per primitive attributes can only be used for mesh shaders");
+                         };
+ 
+                         // Per primitive always imply output
+-                        assert!(flags.output());
++                        assert!(nir_flag_bool(flags.output()));
+                         stage.primitive_io.mark_attrs_written(range);
+                         stage.has_gs_sph = true;
+                     } else if let ShaderIoInfo::Vtg(io) = &mut self.info.io {
+-                        if flags.output() {
++                        if nir_flag_bool(flags.output()) {
+                             io.mark_attrs_written(range);
+                         } else {
+                             io.mark_attrs_read(range);
+@@ -3218,8 +3218,8 @@
+                     dst: dst.into(),
+                     offset: self.get_src(&srcs[0]),
+                     imm_offset: u16::try_from(intrin.base()).unwrap(),
+-                    output: flags.output(),
+-                    skew: flags.skew(),
++                    output: nir_flag_bool(flags.output()),
++                    skew: nir_flag_bool(flags.skew()),
+                     mem_type: MemType::from_size(size_B, false),
+                     access_type,
+                 });
+@@ -3253,18 +3253,18 @@
+                 if matches!(access_type, IsbeAccessType::Attribute)
+                     && !range.is_empty()
+                 {
+-                    if flags.per_primitive() {
++                    if nir_flag_bool(flags.per_primitive()) {
+                         let ShaderStageInfo::Mesh(stage) = &mut self.info.stage
+                         else {
+                             panic!("isbewr_nv per primitives attributes can only be used for mesh shaders");
+                         };
+ 
+                         // Per primitive always imply output
+-                        assert!(flags.output());
++                        assert!(nir_flag_bool(flags.output()));
+                         stage.primitive_io.mark_attrs_written(range);
+                         stage.has_gs_sph = true;
+                     } else if let ShaderIoInfo::Vtg(io) = &mut self.info.io {
+-                        if flags.output() {
++                        if nir_flag_bool(flags.output()) {
+                             io.mark_store_req(range.clone());
+                             io.mark_attrs_written(range);
+                         } else {
+@@ -3279,8 +3279,8 @@
+                     offset: self.get_src(&srcs[1]),
+                     imm_offset: u16::try_from(intrin.base()).unwrap(),
+                     data: self.get_src(&srcs[0]),
+-                    output: flags.output(),
+-                    skew: flags.skew(),
++                    output: nir_flag_bool(flags.output()),
++                    skew: nir_flag_bool(flags.skew()),
+                     mem_type: MemType::from_size(size_B, false),
+                     access_type,
+                 });
+@@ -4090,7 +4090,7 @@
+ 
+                         assert_eq!(flags.a_type(), GLSL_TYPE_FLOAT16);
+                         assert_eq!(flags.b_type(), GLSL_TYPE_FLOAT16);
+-                        assert!(!flags.sat());
++                        assert!(!nir_flag_bool(flags.sat()));
+                         b.push_op(OpHmma {
+                             dst: dst.clone().into(),
+                             dst_type: dst_type,
+@@ -4125,7 +4125,7 @@
+                             mat_size,
+                             srcs: [cmat_a, cmat_b, cmat_c],
+                             src_types: [a_type, b_type],
+-                            saturate: flags.sat(),
++                            saturate: nir_flag_bool(flags.sat()),
+                         });
+                     }
+                     val => unreachable!("Unknown cmat_type {val}"),
+@@ -4660,3 +4660,6 @@
+ ) -> Shader<'a> {
+     ShaderFromNir::new(nak, ns, sm, has_task_shader).parse_shader()
+ }
++
++#[inline]
++fn nir_flag_bool(value: u32) -> bool { value != 0 }
+--- a/src/nouveau/compiler/nak/lib.rs
++++ b/src/nouveau/compiler/nak/lib.rs
+@@ -50,3 +50,5 @@
+ 
+ #[cfg(test)]
+ mod nvdisasm_tests;
++
++mod flags_abi233;
+--- a/src/nouveau/compiler/nak_bindings.h
++++ b/src/nouveau/compiler/nak_bindings.h
+@@ -5,6 +5,7 @@
+ 
+ #include "nak_private.h"
+ 
++#ifndef NAK_STANDALONE
+ #include "nouveau_bo.h"
+ #include "nouveau_context.h"
+ #include "nouveau_device.h"
+@@ -18,3 +19,4 @@
+ enum ENUM_PACKED drm_rs_ioctls {
+    DRM_RS_IOCTL(NOUVEAU_EXEC),
+ };
++#endif /* NAK_STANDALONE */
+--- a/src/nouveau/compiler/nak_private.h
++++ b/src/nouveau/compiler/nak_private.h
+@@ -179,15 +179,18 @@
+ 
+ PRAGMA_DIAGNOSTIC_PUSH
+ PRAGMA_DIAGNOSTIC_ERROR(-Wpadded)
++/* A uniform base type keeps intrinsic flag words at 32 bits with both
++ * GCC and Windows bitfield allocation rules. C/Rust ABI checks cover all
++ * field combinations without changing the platform ABI of other structs. */
+ struct nak_nir_tex_flags {
+-   enum nak_nir_tex_ref_type ref_type:2;
+-   enum nak_nir_lod_mode lod_mode:3;
+-   enum nak_nir_offset_mode offset_mode:2;
+-   bool has_z_cmpr:1;
+-   bool is_sparse:1;
+-   bool nodep:1;
+-   bool scalar:1;
+-   uint32_t pad:21;
++   uint32_t ref_type : 2;
++   uint32_t lod_mode : 3;
++   uint32_t offset_mode : 2;
++   uint32_t has_z_cmpr : 1;
++   uint32_t is_sparse : 1;
++   uint32_t nodep : 1;
++   uint32_t scalar : 1;
++   uint32_t pad : 21;
+ };
+ PRAGMA_DIAGNOSTIC_POP
+ static_assert(sizeof(struct nak_nir_tex_flags) == 4,
+@@ -209,11 +212,12 @@
+ bool nak_nir_lower_f16vec2_shared_atomics(nir_shader *nir);
+ 
+ struct nak_nir_attr_io_flags {
+-   bool output : 1;
+-   bool patch : 1;
+-   bool phys : 1;
+-   uint32_t pad:29;
+-};
++   uint32_t output : 1;
++   uint32_t patch : 1;
++   uint32_t phys : 1;
++   uint32_t pad : 29;
++};
++static_assert(sizeof(struct nak_nir_attr_io_flags) == 4, "NAK flags must be one word");
+ 
+ enum nak_suclamp_mode {
+    NAK_SUCLAMP_MODE_STORED_DESCRIPTOR,
+@@ -230,12 +234,13 @@
+ };
+ 
+ struct nak_nir_suclamp_flags {
+-   enum nak_suclamp_mode mode : 2;
+-   enum nak_suclamp_round round : 3;
+-   bool is_s32 : 1;
+-   bool is_2d : 1;
+-   uint32_t pad:25;
+-};
++   uint32_t mode : 2;
++   uint32_t round : 3;
++   uint32_t is_s32 : 1;
++   uint32_t is_2d : 1;
++   uint32_t pad : 25;
++};
++static_assert(sizeof(struct nak_nir_suclamp_flags) == 4, "NAK flags must be one word");
+ 
+ enum nak_su_ga_offset_mode {
+    NAK_SUGA_OFF_MODE_U32,
+@@ -256,12 +261,13 @@
+ };
+ 
+ struct nak_nir_imadsp_flags {
+-   enum nak_imad_src_type src0 : 3;
+-   enum nak_imad_src_type src1 : 3;
+-   enum nak_imad_src_type src2 : 3;
+-   bool params_from_src1 : 1;
+-   uint32_t pad:22;
+-};
++   uint32_t src0 : 3;
++   uint32_t src1 : 3;
++   uint32_t src2 : 3;
++   uint32_t params_from_src1 : 1;
++   uint32_t pad : 22;
++};
++static_assert(sizeof(struct nak_nir_imadsp_flags) == 4, "NAK flags must be one word");
+ 
+ bool nak_nir_lower_vtg_io(nir_shader *nir, const struct nak_compiler *nak);
+ 
+@@ -273,12 +279,13 @@
+ };
+ 
+ struct nak_nir_isbe_flags {
+-   enum nak_isbe_access access : 2;
+-   bool output : 1;
+-   bool skew : 1;
+-   bool per_primitive : 1;
++   uint32_t access : 2;
++   uint32_t output : 1;
++   uint32_t skew : 1;
++   uint32_t per_primitive : 1;
+    uint32_t pad : 27;
+ };
++static_assert(sizeof(struct nak_nir_isbe_flags) == 4, "NAK flags must be one word");
+ 
+ struct lower_mesh_intrinsics_ctx {
+    const struct nak_compiler *nak;
+@@ -375,11 +382,12 @@
+ };
+ 
+ struct nak_nir_ipa_flags {
+-   enum nak_interp_mode interp_mode:2;
+-   enum nak_interp_freq interp_freq:2;
+-   enum nak_interp_loc interp_loc:2;
+-   uint32_t pad:26;
+-};
++   uint32_t interp_mode : 2;
++   uint32_t interp_freq : 2;
++   uint32_t interp_loc : 2;
++   uint32_t pad : 26;
++};
++static_assert(sizeof(struct nak_nir_ipa_flags) == 4, "NAK flags must be one word");
+ 
+ enum nak_cmat_type {
+    NAK_CMAT_TYPE_M8N8K16_INT,
+@@ -400,12 +408,13 @@
+ };
+ 
+ struct nak_nir_cmat_mul_add_flags {
+-   enum nak_cmat_type cmat_type:3;
+-   enum glsl_base_type a_type:5;
+-   enum glsl_base_type b_type:5;
+-   bool sat:1;
+-   uint32_t pad:18;
+-};
++   uint32_t cmat_type : 3;
++   uint32_t a_type : 5;
++   uint32_t b_type : 5;
++   uint32_t sat : 1;
++   uint32_t pad : 18;
++};
++static_assert(sizeof(struct nak_nir_cmat_mul_add_flags) == 4, "NAK flags must be one word");
+ 
+ bool nak_nir_lower_fs_inputs(nir_shader *nir,
+                              const struct nak_compiler *nak,
+--- a/src/nouveau/headers/meson.build
++++ b/src/nouveau/headers/meson.build
+@@ -132,8 +132,8 @@
+ nouveau_util_py = files('util.py')
+ nouveau_util_py_path = meson.current_source_dir()
+ 
+-# Only generate Rust bindings for NVK
+-if with_nouveau_vk
++# Rust bindings also support the standalone shader compiler
++if with_nak
+   cl_rs_generated = []
+   foreach cl : nv_classes
+     cl_rs_generated += custom_target(
+--- a/src/nouveau/meson.build
++++ b/src/nouveau/meson.build
+@@ -2,9 +2,11 @@
+ # SPDX-License-Identifier: MIT
+ 
+ subdir('headers')
+-subdir('drm')
+-subdir('winsys')
+-if with_nouveau_vk
++if not with_nak_standalone
++  subdir('drm')
++  subdir('winsys')
++endif
++if with_nak
+   subdir('rust')
+   subdir('nil')
+   subdir('compiler')
+--- a/src/nouveau/nil/meson.build
++++ b/src/nouveau/nil/meson.build
+@@ -6,6 +6,33 @@
+   native : true,
+   version : '>= 0.25'
+ )
++
++if with_nak_standalone
++  # The compiler only consumes the generated storage-image descriptor layout.
++  # No DRM ioctl declarations are needed by the standalone header consumer.
++  _standalone_config = configure_file(
++    input : 'cbindgen.toml',
++    output : 'cbindgen-standalone.toml',
++    command : [prog_python, files('standalone_config.py'), '@INPUT@', '@OUTPUT@'],
++  )
++  _nil_h = custom_target(
++    'nil_h',
++    input : [_standalone_config, files('lib.rs')],
++    output : ['nil.h'],
++    command : [
++      prog_cbindgen, '-q', '--config', '@INPUT0@', '--lang', 'c',
++      '--output', '@OUTPUT0@', '--depfile', '@DEPFILE@',
++      '--', '@INPUT1@',
++    ],
++    depfile : 'nil.h.d',
++  )
++
++  idep_nil_h = declare_dependency(
++    include_directories : include_directories('.'),
++    sources : [_nil_h],
++  )
++  subdir_done()
++endif
+ 
+ dep_paste = dependency('paste',
+   version : '>= 1.0.14',
+--- /dev/null
++++ b/src/nouveau/compiler/flags_abi233.h
+@@ -0,0 +1,114 @@
++#include <stdint.h>
++#include <string.h>
++#include <stdio.h>
++extern bool nak_validate_flag_words233(unsigned kind, const void *flags, uint32_t expected);
++static bool check_word_0(uint32_t value) {
++ struct nak_nir_tex_flags flags = {0};
++ flags.ref_type = (value >> 0) & 3u;
++ flags.lod_mode = (value >> 2) & 7u;
++ flags.offset_mode = (value >> 5) & 3u;
++ flags.has_z_cmpr = (value >> 7) & 1u;
++ flags.is_sparse = (value >> 8) & 1u;
++ flags.nodep = (value >> 9) & 1u;
++ flags.scalar = (value >> 10) & 1u;
++ flags.pad = (value >> 11) & 2097151u;
++ uint32_t word; memcpy(&word, &flags, 4);
++ return word == value && nak_validate_flag_words233(0, &flags, value);
++}
++static bool check_word_1(uint32_t value) {
++ struct nak_nir_attr_io_flags flags = {0};
++ flags.output = (value >> 0) & 1u;
++ flags.patch = (value >> 1) & 1u;
++ flags.phys = (value >> 2) & 1u;
++ flags.pad = (value >> 3) & 536870911u;
++ uint32_t word; memcpy(&word, &flags, 4);
++ return word == value && nak_validate_flag_words233(1, &flags, value);
++}
++static bool check_word_2(uint32_t value) {
++ struct nak_nir_suclamp_flags flags = {0};
++ flags.mode = (value >> 0) & 3u;
++ flags.round = (value >> 2) & 7u;
++ flags.is_s32 = (value >> 5) & 1u;
++ flags.is_2d = (value >> 6) & 1u;
++ flags.pad = (value >> 7) & 33554431u;
++ uint32_t word; memcpy(&word, &flags, 4);
++ return word == value && nak_validate_flag_words233(2, &flags, value);
++}
++static bool check_word_3(uint32_t value) {
++ struct nak_nir_imadsp_flags flags = {0};
++ flags.src0 = (value >> 0) & 7u;
++ flags.src1 = (value >> 3) & 7u;
++ flags.src2 = (value >> 6) & 7u;
++ flags.params_from_src1 = (value >> 9) & 1u;
++ flags.pad = (value >> 10) & 4194303u;
++ uint32_t word; memcpy(&word, &flags, 4);
++ return word == value && nak_validate_flag_words233(3, &flags, value);
++}
++static bool check_word_4(uint32_t value) {
++ struct nak_nir_isbe_flags flags = {0};
++ flags.access = (value >> 0) & 3u;
++ flags.output = (value >> 2) & 1u;
++ flags.skew = (value >> 3) & 1u;
++ flags.per_primitive = (value >> 4) & 1u;
++ flags.pad = (value >> 5) & 134217727u;
++ uint32_t word; memcpy(&word, &flags, 4);
++ return word == value && nak_validate_flag_words233(4, &flags, value);
++}
++static bool check_word_5(uint32_t value) {
++ struct nak_nir_ipa_flags flags = {0};
++ flags.interp_mode = (value >> 0) & 3u;
++ flags.interp_freq = (value >> 2) & 3u;
++ flags.interp_loc = (value >> 4) & 3u;
++ flags.pad = (value >> 6) & 67108863u;
++ uint32_t word; memcpy(&word, &flags, 4);
++ return word == value && nak_validate_flag_words233(5, &flags, value);
++}
++static bool check_word_6(uint32_t value) {
++ struct nak_nir_cmat_mul_add_flags flags = {0};
++ flags.cmat_type = (value >> 0) & 7u;
++ flags.a_type = (value >> 3) & 31u;
++ flags.b_type = (value >> 8) & 31u;
++ flags.sat = (value >> 13) & 1u;
++ flags.pad = (value >> 14) & 262143u;
++ uint32_t word; memcpy(&word, &flags, 4);
++ return word == value && nak_validate_flag_words233(6, &flags, value);
++}
++static int check_flags_abi(void) {
++ for (uint32_t value = 0; value < 2048; ++value) if (!check_word_0(value)) return 1;
++ if (!check_word_0(0xffffffffu)) return 1;
++ if (!check_word_0(0x80000000u)) return 1;
++ if (!check_word_0(0xaaaaaaaau)) return 1;
++ if (!check_word_0(0x55555555u)) return 1;
++ for (uint32_t value = 0; value < 8; ++value) if (!check_word_1(value)) return 1;
++ if (!check_word_1(0xffffffffu)) return 1;
++ if (!check_word_1(0x80000000u)) return 1;
++ if (!check_word_1(0xaaaaaaaau)) return 1;
++ if (!check_word_1(0x55555555u)) return 1;
++ for (uint32_t value = 0; value < 128; ++value) if (!check_word_2(value)) return 1;
++ if (!check_word_2(0xffffffffu)) return 1;
++ if (!check_word_2(0x80000000u)) return 1;
++ if (!check_word_2(0xaaaaaaaau)) return 1;
++ if (!check_word_2(0x55555555u)) return 1;
++ for (uint32_t value = 0; value < 1024; ++value) if (!check_word_3(value)) return 1;
++ if (!check_word_3(0xffffffffu)) return 1;
++ if (!check_word_3(0x80000000u)) return 1;
++ if (!check_word_3(0xaaaaaaaau)) return 1;
++ if (!check_word_3(0x55555555u)) return 1;
++ for (uint32_t value = 0; value < 32; ++value) if (!check_word_4(value)) return 1;
++ if (!check_word_4(0xffffffffu)) return 1;
++ if (!check_word_4(0x80000000u)) return 1;
++ if (!check_word_4(0xaaaaaaaau)) return 1;
++ if (!check_word_4(0x55555555u)) return 1;
++ for (uint32_t value = 0; value < 64; ++value) if (!check_word_5(value)) return 1;
++ if (!check_word_5(0xffffffffu)) return 1;
++ if (!check_word_5(0x80000000u)) return 1;
++ if (!check_word_5(0xaaaaaaaau)) return 1;
++ if (!check_word_5(0x55555555u)) return 1;
++ for (uint32_t value = 0; value < 16384; ++value) if (!check_word_6(value)) return 1;
++ if (!check_word_6(0xffffffffu)) return 1;
++ if (!check_word_6(0x80000000u)) return 1;
++ if (!check_word_6(0xaaaaaaaau)) return 1;
++ if (!check_word_6(0x55555555u)) return 1;
++ puts("{\"passed\":true,\"c_rust_bitfield_cases\":19716,\"structs\":7,\"struct_bytes\":4,\"gpu_executed\":false}");
++ return 0;
++}
+--- /dev/null
++++ b/src/nouveau/compiler/nak/flags_abi233.rs
+@@ -0,0 +1,73 @@
++use nak_bindings::*;
++use std::ffi::c_void;
++#[no_mangle]
++pub extern "C" fn nak_validate_flag_words233(kind: u32, ptr: *const c_void, expected: u32) -> bool {
++ if ptr.is_null() { return false; }
++ match kind {
++  0 => {
++   if std::mem::size_of::<nak_nir_tex_flags>() != 4 { return false; }
++   let f = unsafe { &*(ptr.cast::<nak_nir_tex_flags>()) };
++   f.ref_type() == ((expected >> 0) & 3)
++   && f.lod_mode() == ((expected >> 2) & 7)
++   && f.offset_mode() == ((expected >> 5) & 3)
++   && f.has_z_cmpr() == ((expected >> 7) & 1)
++   && f.is_sparse() == ((expected >> 8) & 1)
++   && f.nodep() == ((expected >> 9) & 1)
++   && f.scalar() == ((expected >> 10) & 1)
++   && f.pad() == ((expected >> 11) & 2097151)
++  },
++  1 => {
++   if std::mem::size_of::<nak_nir_attr_io_flags>() != 4 { return false; }
++   let f = unsafe { &*(ptr.cast::<nak_nir_attr_io_flags>()) };
++   f.output() == ((expected >> 0) & 1)
++   && f.patch() == ((expected >> 1) & 1)
++   && f.phys() == ((expected >> 2) & 1)
++   && f.pad() == ((expected >> 3) & 536870911)
++  },
++  2 => {
++   if std::mem::size_of::<nak_nir_suclamp_flags>() != 4 { return false; }
++   let f = unsafe { &*(ptr.cast::<nak_nir_suclamp_flags>()) };
++   f.mode() == ((expected >> 0) & 3)
++   && f.round() == ((expected >> 2) & 7)
++   && f.is_s32() == ((expected >> 5) & 1)
++   && f.is_2d() == ((expected >> 6) & 1)
++   && f.pad() == ((expected >> 7) & 33554431)
++  },
++  3 => {
++   if std::mem::size_of::<nak_nir_imadsp_flags>() != 4 { return false; }
++   let f = unsafe { &*(ptr.cast::<nak_nir_imadsp_flags>()) };
++   f.src0() == ((expected >> 0) & 7)
++   && f.src1() == ((expected >> 3) & 7)
++   && f.src2() == ((expected >> 6) & 7)
++   && f.params_from_src1() == ((expected >> 9) & 1)
++   && f.pad() == ((expected >> 10) & 4194303)
++  },
++  4 => {
++   if std::mem::size_of::<nak_nir_isbe_flags>() != 4 { return false; }
++   let f = unsafe { &*(ptr.cast::<nak_nir_isbe_flags>()) };
++   f.access() == ((expected >> 0) & 3)
++   && f.output() == ((expected >> 2) & 1)
++   && f.skew() == ((expected >> 3) & 1)
++   && f.per_primitive() == ((expected >> 4) & 1)
++   && f.pad() == ((expected >> 5) & 134217727)
++  },
++  5 => {
++   if std::mem::size_of::<nak_nir_ipa_flags>() != 4 { return false; }
++   let f = unsafe { &*(ptr.cast::<nak_nir_ipa_flags>()) };
++   f.interp_mode() == ((expected >> 0) & 3)
++   && f.interp_freq() == ((expected >> 2) & 3)
++   && f.interp_loc() == ((expected >> 4) & 3)
++   && f.pad() == ((expected >> 6) & 67108863)
++  },
++  6 => {
++   if std::mem::size_of::<nak_nir_cmat_mul_add_flags>() != 4 { return false; }
++   let f = unsafe { &*(ptr.cast::<nak_nir_cmat_mul_add_flags>()) };
++   f.cmat_type() == ((expected >> 0) & 7)
++   && f.a_type() == ((expected >> 3) & 31)
++   && f.b_type() == ((expected >> 8) & 31)
++   && f.sat() == ((expected >> 13) & 1)
++   && f.pad() == ((expected >> 14) & 262143)
++  },
++  _ => false,
++ }
++}
+--- /dev/null
++++ b/src/nouveau/compiler/nak_standalone.c
+@@ -0,0 +1,110 @@
++/* Standalone SPIR-V to NVIDIA graphics code probe. No GPU device is opened. */
++#include "nak.h"
++#include "nak_private.h"
++#include "nv_device_info.h"
++#include "compiler/glsl_types.h"
++#include "compiler/spirv/nir_spirv.h"
++#include "nir.h"
++#include "util/ralloc.h"
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include "flags_abi233.h"
++
++static bool
++write_file(const char *path, const void *data, size_t bytes)
++{
++   FILE *f = fopen(path, "wbx");
++   if (!f)
++      return false;
++   bool ok = fwrite(data, 1, bytes, f) == bytes;
++   return fclose(f) == 0 && ok;
++}
++
++int
++main(int argc, char **argv)
++{
++   if (argc == 2 && !strcmp(argv[1], "--check-flags"))
++      return check_flags_abi();
++   if (argc != 6 || (strcmp(argv[1], "vertex") && strcmp(argv[1], "fragment"))) {
++      fprintf(stderr, "usage: nak_standalone vertex|fragment input.spv code.bin header.bin assembly.txt\n");
++      return 2;
++   }
++   mesa_shader_stage stage = !strcmp(argv[1], "vertex") ? MESA_SHADER_VERTEX : MESA_SHADER_FRAGMENT;
++   FILE *input = fopen(argv[2], "rb");
++   if (!input)
++      return 2;
++   if (fseek(input, 0, SEEK_END)) {
++      fclose(input);
++      return 2;
++   }
++   long size = ftell(input);
++   if (size < 20 || size > 4 * 1024 * 1024 || (size & 3) || fseek(input, 0, SEEK_SET)) {
++      fclose(input);
++      return 2;
++   }
++   uint32_t *words = malloc((size_t)size);
++   if (!words) {
++      fclose(input);
++      return 2;
++   }
++   bool read_ok = fread(words, 1, (size_t)size, input) == (size_t)size;
++   read_ok = fclose(input) == 0 && read_ok;
++   if (!read_ok || words[0] != 0x07230203) {
++      free(words);
++      return 2;
++   }
++
++   /* Offline GA106 compiler profile; these are not live device observations. */
++   const struct nv_device_info device = {
++      .type = NV_DEVICE_TYPE_DIS,
++      .sm = 86,
++      .max_warps_per_mp = 48,
++      .cls_eng3d = 0xc797,
++   };
++   fprintf(stderr, "standalone: initialize compiler\n");
++   glsl_type_singleton_init_or_ref();
++   struct nak_compiler *compiler = nak_compiler_create(&device);
++   const struct spirv_to_nir_options options = {
++      .environment = NIR_SPIRV_VULKAN,
++      .ignore_replacement = true,
++      .skip_os_break_in_debug_build = true,
++   };
++   fprintf(stderr, "standalone: SPIR-V to NIR\n");
++   nir_shader *nir = spirv_to_nir(words, (size_t)size / 4, NULL, stage, "main",
++                                &options, nak_nir_options(compiler));
++   free(words);
++   int rc = 1;
++   struct nak_shader_bin *binary = NULL;
++   if (!nir)
++      goto finish;
++   fprintf(stderr, "standalone: preprocess NIR\n");
++   nak_preprocess_nir(nir, compiler);
++   struct nak_fs_key fs_key = {0};
++   fprintf(stderr, "standalone: compile NAK\n");
++   binary = nak_compile_shader(nir, true, compiler, 0,
++                               stage == MESA_SHADER_FRAGMENT ? &fs_key : NULL, false);
++   fprintf(stderr, "standalone: inspect binary\n");
++   if (!binary || !binary->code || !binary->asm_str || binary->info.sm != 86 ||
++       binary->info.stage != stage || !binary->code_size || binary->code_size > 4 * 1024 * 1024)
++      goto finish;
++   if (!write_file(argv[3], binary->code, binary->code_size) ||
++       !write_file(argv[4], binary->info.hdr, sizeof(binary->info.hdr)) ||
++       !write_file(argv[5], binary->asm_str, strlen(binary->asm_str)))
++      goto finish;
++   printf("{\"passed\":true,\"stage\":\"%s\",\"sm\":86,\"code_bytes\":%u,"
++          "\"header_bytes\":%zu,\"gprs\":%u,\"instructions\":%u,"
++          "\"scratch_bytes\":%u,\"gpu_executed\":false}\n",
++          argv[1], binary->code_size, sizeof(binary->info.hdr), binary->info.num_gprs,
++          binary->info.num_instrs, binary->info.slm_size);
++   rc = 0;
++finish:
++   if (binary)
++      nak_shader_bin_destroy(binary);
++   if (nir)
++      ralloc_free(nir);
++   nak_compiler_destroy(compiler);
++   glsl_type_singleton_decref();
++   return rc;
++}
+--- /dev/null
++++ b/src/nouveau/compiler/standalone_constants.py
+@@ -0,0 +1,41 @@
++# SPDX-License-Identifier: MIT
++"""Extract NAK's driver-owned constant layout from NVK, without its OS runtime."""
++from pathlib import Path
++import re, sys
++
++private, descriptors, commands, shader, output = map(Path, sys.argv[1:])
++def definition(text, declaration):
++    start = text.index(declaration)
++    brace = text.index('{', start)
++    depth = 0
++    for i in range(brace, len(text)):
++        if text[i] == '{': depth += 1
++        if text[i] == '}':
++            depth -= 1
++            if depth == 0:
++                assert text[i+1] == ';'
++                return text[start:i+2] + '\n'
++    raise ValueError(declaration)
++
++p = private.read_text(encoding='utf-8')
++c = commands.read_text(encoding='utf-8')
++s = shader.read_text(encoding='utf-8')
++parts = ['/* Derived verbatim declarations from NVK; Copyright (c) 2022 Collabora Ltd. and Red Hat Inc.\n'
++         ' * SPDX-License-Identifier: MIT\n'
++         ' * Offline compiler profile only. No NVK runtime or GPU binding is installed. */\n',
++         '#include "nak.h"\n#include <stddef.h>\n']
++for macro in ('NVK_MAX_SETS','NVK_MAX_SAMPLES','NVK_MAX_DYNAMIC_BUFFERS','NVK_MAX_PUSH_SIZE',
++              'NVK_HW_ROOT_TABLE_SIZE','NVK_HW_ROOT_TABLE_FIRST_CB'):
++    m = re.search(r'^#define ' + macro + r'\s+\d+\s*$', p, re.M)
++    assert m, macro
++    parts.append(m.group(0).strip() + '\n')
++parts.append(definition(descriptors.read_text(encoding='utf-8'), 'struct nvk_buffer_address {'))
++parts.append(definition(c, 'struct nvk_root_descriptor_table {'))
++for macro in ('nvk_root_descriptor_offset','nvk_hw_root_table_index','nvk_hw_root_table_offset'):
++    m = re.search(r'^#define ' + macro + r'\(member\)\\\n[^\n]+', c, re.M)
++    assert m, macro
++    parts.append(m.group(0) + '\n')
++for name in ('nak_const_offsets_base','nak_const_offsets_turing_graphics'):
++    parts.append(definition(s, 'const struct nak_constant_offset_info ' + name + ' = {'))
++parts.append('static_assert(sizeof(struct nvk_buffer_address) == 16, "NVK buffer layout");\n')
++output.write_text('\n'.join(parts), encoding='utf-8')
+--- /dev/null
++++ b/src/nouveau/nil/standalone_config.py
+@@ -0,0 +1,9 @@
++# SPDX-License-Identifier: MIT
++"""Generate the compiler-only header configuration from the upstream config."""
++from pathlib import Path
++import sys
++
++text = Path(sys.argv[1]).read_text(encoding='utf-8')
++unused = ', "drm-uapi/drm_fourcc.h"'
++assert text.count(unused) == 1
++Path(sys.argv[2]).write_text(text.replace(unused, ''), encoding='utf-8')

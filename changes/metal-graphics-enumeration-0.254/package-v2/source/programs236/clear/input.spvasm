@@ -1,0 +1,65 @@
+; SPIR-V
+; Version: 1.4
+; Generator: Google rspirv; 0
+; Bound: 42
+; Schema: 0
+               OpCapability Shader
+               OpCapability StorageImageWriteWithoutFormat
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %23 "main" %11 %18 %15
+               OpExecutionMode %23 LocalSize 64 1 1
+               OpSource Unknown 0
+               OpName %23 "rtx_clear_color231"
+               OpDecorate %11 DescriptorSet 0
+               OpDecorate %11 Binding 480
+               OpDecorate %15 DescriptorSet 0
+               OpDecorate %15 Binding 0
+               OpDecorate %18 BuiltIn GlobalInvocationId
+               OpDecorate %13 Block
+               OpMemberDecorate %13 0 Offset 0
+               OpDecorate %12 ArrayStride 4
+               OpDecorate %15 NonWritable
+          %1 = OpTypeVoid
+          %2 = OpTypeInt 32 0
+          %3 = OpTypeVector %2 2
+          %4 = OpTypeFloat 32
+          %5 = OpTypeVector %4 4
+          %6 = OpUndef %5
+          %7 = OpConstant %2 0
+          %8 = OpConstant %2 2
+          %9 = OpTypeImage %4 2D 0 0 0 2 Unknown
+         %10 = OpTypePointer UniformConstant %9
+         %11 = OpVariable %10 UniformConstant
+         %12 = OpTypeRuntimeArray %4
+         %13 = OpTypeStruct %12
+         %14 = OpTypePointer StorageBuffer %13
+         %15 = OpVariable %14 StorageBuffer
+         %16 = OpTypeVector %2 3
+         %17 = OpTypePointer Input %16
+         %18 = OpVariable %17 Input
+         %19 = OpConstant %2 1
+         %20 = OpTypePointer StorageBuffer %4
+         %21 = OpConstant %2 3
+         %22 = OpTypeFunction %1
+         %23 = OpFunction %1 None %22
+         %24 = OpLabel
+         %25 = OpAccessChain %20 %15 %7 %7
+         %26 = OpLoad %9 %11
+         %27 = OpLoad %16 %18
+         %28 = OpCompositeExtract %2 %27 0
+         %29 = OpCompositeExtract %2 %27 1
+         %30 = OpCompositeConstruct %3 %28 %29
+         %31 = OpLoad %4 %25
+         %32 = OpCompositeInsert %5 %31 %6 0
+         %33 = OpInBoundsAccessChain %20 %15 %7 %19
+         %34 = OpLoad %4 %33
+         %35 = OpCompositeInsert %5 %34 %32 1
+         %36 = OpInBoundsAccessChain %20 %15 %7 %8
+         %37 = OpLoad %4 %36
+         %38 = OpCompositeInsert %5 %37 %35 2
+         %39 = OpInBoundsAccessChain %20 %15 %7 %21
+         %40 = OpLoad %4 %39
+         %41 = OpCompositeInsert %5 %40 %38 3
+               OpImageWrite %26 %30 %41
+               OpReturn
+               OpFunctionEnd

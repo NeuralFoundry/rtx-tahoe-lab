@@ -1,0 +1,97 @@
+; SPIR-V
+; Version: 1.4
+; Generator: Google rspirv; 0
+; Bound: 67
+; Schema: 0
+               OpCapability Shader
+               OpCapability Int64
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %24 "main" %14 %8 %11 %19
+               OpExecutionMode %24 LocalSize 64 1 1
+               OpSource Unknown 0
+               OpName %24 "vector_xor"
+               OpDecorate %8 DescriptorSet 0
+               OpDecorate %8 Binding 0
+               OpDecorate %11 DescriptorSet 0
+               OpDecorate %11 Binding 1
+               OpDecorate %14 BuiltIn GlobalInvocationId
+               OpDecorate %6 Block
+               OpMemberDecorate %6 0 Offset 0
+               OpDecorate %5 ArrayStride 4
+               OpDecorate %9 Block
+               OpMemberDecorate %9 0 Offset 0
+               OpDecorate %17 Block
+               OpMemberDecorate %17 0 Offset 0
+               OpDecorate %19 DescriptorSet 0
+               OpDecorate %19 Binding 2
+               OpDecorate %8 NonWritable
+               OpDecorate %11 NonWritable
+          %1 = OpTypeVoid
+          %2 = OpTypeInt 32 0
+          %3 = OpTypeBool
+          %4 = OpTypeInt 64 0
+          %5 = OpTypeRuntimeArray %2
+          %6 = OpTypeStruct %5
+          %7 = OpTypePointer StorageBuffer %6
+          %8 = OpVariable %7 StorageBuffer
+          %9 = OpTypeStruct %5
+         %10 = OpTypePointer StorageBuffer %9
+         %11 = OpVariable %10 StorageBuffer
+         %12 = OpTypeVector %2 3
+         %13 = OpTypePointer Input %12
+         %14 = OpVariable %13 Input
+         %15 = OpConstant %2 0
+         %16 = OpTypePointer StorageBuffer %2
+         %17 = OpTypeStruct %5
+         %18 = OpTypePointer StorageBuffer %17
+         %19 = OpVariable %18 StorageBuffer
+         %20 = OpConstant %4 0
+         %21 = OpConstant %4 32
+         %22 = OpConstant %2 1
+         %23 = OpTypeFunction %1
+         %24 = OpFunction %1 None %23
+         %25 = OpLabel
+         %26 = OpLoad %12 %14
+         %27 = OpCompositeExtract %2 %26 0
+         %28 = OpUConvert %4 %27
+         %29 = OpUConvert %2 %20
+         %30 = OpShiftRightLogical %4 %20 %21
+         %31 = OpUConvert %2 %30
+         %32 = OpUConvert %2 %28
+         %33 = OpShiftRightLogical %4 %28 %21
+         %34 = OpUConvert %2 %33
+         %35 = OpIAdd %2 %29 %32
+         %36 = OpULessThan %3 %35 %29
+         %37 = OpSelect %2 %36 %22 %15
+         %38 = OpIAdd %2 %31 %34
+         %39 = OpIAdd %2 %38 %37
+         %40 = OpUConvert %4 %35
+         %41 = OpUConvert %4 %39
+         %42 = OpShiftLeftLogical %4 %41 %21
+         %43 = OpBitwiseOr %4 %42 %40
+         %44 = OpAccessChain %16 %8 %15 %43
+         %45 = OpLoad %2 %44
+         %46 = OpCopyObject %2 %45
+         %47 = OpUConvert %2 %20
+         %48 = OpShiftRightLogical %4 %20 %21
+         %49 = OpUConvert %2 %48
+         %50 = OpUConvert %2 %28
+         %51 = OpShiftRightLogical %4 %28 %21
+         %52 = OpUConvert %2 %51
+         %53 = OpIAdd %2 %47 %50
+         %54 = OpULessThan %3 %53 %47
+         %55 = OpSelect %2 %54 %22 %15
+         %56 = OpIAdd %2 %49 %52
+         %57 = OpIAdd %2 %56 %55
+         %58 = OpUConvert %4 %53
+         %59 = OpUConvert %4 %57
+         %60 = OpShiftLeftLogical %4 %59 %21
+         %61 = OpBitwiseOr %4 %60 %58
+         %62 = OpAccessChain %16 %11 %15 %61
+         %63 = OpLoad %2 %62
+         %64 = OpCopyObject %2 %63
+         %65 = OpBitwiseXor %2 %64 %46
+         %66 = OpInBoundsAccessChain %16 %19 %15 %28
+               OpStore %66 %65
+               OpReturn
+               OpFunctionEnd

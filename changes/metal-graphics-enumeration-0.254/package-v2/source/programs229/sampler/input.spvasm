@@ -1,0 +1,104 @@
+; SPIR-V
+; Version: 1.4
+; Generator: Google rspirv; 0
+; Bound: 71
+; Schema: 0
+               OpCapability Shader
+               OpCapability Int8
+               OpCapability Int64
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %34 "main" %17 %20 %30 %24 %27
+               OpExecutionMode %34 LocalSize 64 1 1
+               OpSource Unknown 0
+               OpName %34 "sample_texture227"
+               OpDecorate %17 DescriptorSet 0
+               OpDecorate %17 Binding 32
+               OpDecorate %20 DescriptorSet 0
+               OpDecorate %20 Binding 160
+               OpDecorate %24 DescriptorSet 0
+               OpDecorate %24 Binding 0
+               OpDecorate %27 DescriptorSet 0
+               OpDecorate %27 Binding 1
+               OpDecorate %30 BuiltIn GlobalInvocationId
+               OpDecorate %22 Block
+               OpMemberDecorate %22 0 Offset 0
+               OpDecorate %21 ArrayStride 4
+               OpDecorate %25 Block
+               OpMemberDecorate %25 0 Offset 0
+               OpDecorate %24 NonWritable
+          %1 = OpTypeFloat 32
+          %2 = OpTypeVector %1 4
+          %3 = OpTypeInt 8 0
+          %4 = OpTypeStruct %2 %3
+          %5 = OpTypeVector %1 2
+          %6 = OpTypeInt 32 0
+          %7 = OpTypeVoid
+          %8 = OpConstant %6 1
+          %9 = OpTypeInt 64 0
+         %10 = OpUndef %5
+         %11 = OpConstant %1 0
+         %12 = OpConstant %6 0
+         %13 = OpConstant %6 2
+         %14 = OpConstant %6 3
+         %15 = OpTypeImage %1 2D 0 0 0 1 Unknown
+         %16 = OpTypePointer UniformConstant %15
+         %17 = OpVariable %16 UniformConstant
+         %18 = OpTypeSampler
+         %19 = OpTypePointer UniformConstant %18
+         %20 = OpVariable %19 UniformConstant
+         %21 = OpTypeRuntimeArray %1
+         %22 = OpTypeStruct %21
+         %23 = OpTypePointer StorageBuffer %22
+         %24 = OpVariable %23 StorageBuffer
+         %25 = OpTypeStruct %21
+         %26 = OpTypePointer StorageBuffer %25
+         %27 = OpVariable %26 StorageBuffer
+         %28 = OpTypeVector %6 3
+         %29 = OpTypePointer Input %28
+         %30 = OpVariable %29 Input
+         %31 = OpTypePointer StorageBuffer %1
+         %32 = OpTypeSampledImage %15
+         %33 = OpTypeFunction %7
+         %34 = OpFunction %7 None %33
+         %35 = OpLabel
+         %36 = OpLoad %15 %17
+         %37 = OpLoad %18 %20
+         %38 = OpLoad %28 %30
+         %39 = OpCompositeExtract %6 %38 0
+         %40 = OpShiftLeftLogical %6 %39 %8
+         %41 = OpUConvert %9 %40
+         %42 = OpInBoundsAccessChain %31 %24 %12 %41
+         %43 = OpLoad %1 %42
+         %44 = OpCompositeInsert %5 %43 %10 0
+         %45 = OpBitwiseOr %6 %40 %8
+         %46 = OpUConvert %9 %45
+         %47 = OpInBoundsAccessChain %31 %24 %12 %46
+         %48 = OpLoad %1 %47
+         %49 = OpCompositeInsert %5 %48 %44 1
+         %50 = OpSampledImage %32 %36 %37
+         %51 = OpImageSampleExplicitLod %2 %50 %49 Lod %11
+         %52 = OpUndef %3
+         %53 = OpCompositeConstruct %4 %51 %52
+         %54 = OpCompositeExtract %2 %53 0
+         %55 = OpCompositeExtract %1 %54 0
+         %56 = OpShiftLeftLogical %6 %39 %13
+         %57 = OpUConvert %9 %56
+         %58 = OpInBoundsAccessChain %31 %27 %12 %57
+               OpStore %58 %55
+         %59 = OpCompositeExtract %1 %54 1
+         %60 = OpBitwiseOr %6 %56 %8
+         %61 = OpUConvert %9 %60
+         %62 = OpInBoundsAccessChain %31 %27 %12 %61
+               OpStore %62 %59
+         %63 = OpCompositeExtract %1 %54 2
+         %64 = OpBitwiseOr %6 %56 %13
+         %65 = OpUConvert %9 %64
+         %66 = OpInBoundsAccessChain %31 %27 %12 %65
+               OpStore %66 %63
+         %67 = OpCompositeExtract %1 %54 3
+         %68 = OpBitwiseOr %6 %56 %14
+         %69 = OpUConvert %9 %68
+         %70 = OpInBoundsAccessChain %31 %27 %12 %69
+               OpStore %70 %67
+               OpReturn
+               OpFunctionEnd

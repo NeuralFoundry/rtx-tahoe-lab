@@ -1,0 +1,72 @@
+.version 7.1
+.target sm_86
+.address_size 64
+
+.visible .entry rtx_entry(
+    .param .u64 arg0,
+    .param .u64 arg1,
+    .param .u64 arg2
+)
+.reqntid 64, 1, 1
+{
+    .reg .b64 %r0;
+    .reg .b64 %r1;
+    .reg .b64 %r2;
+    .reg .b64 %r3;
+    .reg .b64 %r4;
+    .reg .b64 %r5;
+    .reg .b32 %r6;
+    .reg .b32 %r7;
+    .reg .b32 %r8;
+    .reg .b32 %r9;
+    .reg .b32 %r10;
+    .reg .b32 %r11;
+    .reg .b32 %r12;
+    .reg .b32 %r13;
+    .reg .b32 %r14;
+    .reg .b64 %r15;
+    .reg .b64 %r16;
+    .reg .b64 %r17;
+    .reg .b64 %r18;
+    .reg .f32 %f19;
+    .reg .b64 %r20;
+    .reg .b64 %r21;
+    .reg .b64 %r22;
+    .reg .f32 %f23;
+    .reg .f32 %f24;
+    .reg .f32 %f25;
+    .reg .b64 %r26;
+    .reg .b64 %r27;
+    .reg .b64 %r28;
+    ld.param.u64 %r0, [arg0];
+    cvta.to.global.u64 %r1, %r0;
+    ld.param.u64 %r2, [arg1];
+    cvta.to.global.u64 %r3, %r2;
+    ld.param.u64 %r4, [arg2];
+    cvta.to.global.u64 %r5, %r4;
+    mov.u32 %r6, %ctaid.x;
+    mov.u32 %r7, %tid.x;
+    mad.lo.u32 %r8, %r6, 64, %r7;
+    mov.u32 %r9, %ctaid.y;
+    mov.u32 %r10, %tid.y;
+    mad.lo.u32 %r11, %r9, 1, %r10;
+    mov.u32 %r12, %ctaid.z;
+    mov.u32 %r13, %tid.z;
+    mad.lo.u32 %r14, %r12, 1, %r13;
+    cvt.u64.u32 %r15, %r8;
+    mov.b64 %r16, %r15;
+    mul.lo.u64 %r17, %r16, 4;
+    add.u64 %r18, %r1, %r17;
+    ld.global.f32 %f19, [%r18];
+    mov.b64 %r20, %r15;
+    mul.lo.u64 %r21, %r20, 4;
+    add.u64 %r22, %r3, %r21;
+    ld.global.f32 %f23, [%r22];
+    add.rn.ftz.f32 %f24, %f19, %f23;
+    add.rn.ftz.f32 %f25, %f24, 0f41100000;
+    mov.b64 %r26, %r15;
+    mul.lo.u64 %r27, %r26, 4;
+    add.u64 %r28, %r5, %r27;
+    st.global.f32 [%r28], %f25;
+    ret;
+}

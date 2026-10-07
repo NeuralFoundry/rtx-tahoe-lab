@@ -1,0 +1,18 @@
+name: CPU protocol tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: python tools/verify_snapshot.py
+      - run: python tools/test_cpu.py
+      - name: Graphics broker CPU model
+        run: |
+          c++ -std=c++17 -O1 -Wall -Wextra changes/metal-graphics-discovery-0.253/source-v1/test-graphics-broker251.cpp -o /tmp/rtx-broker-test
+          /tmp/rtx-broker-test
