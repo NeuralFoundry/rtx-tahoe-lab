@@ -17,7 +17,13 @@ discrepancy remains: a constant blue output of 0.5 yielded byte 127 while the
 reference comparison expected 128. These narrow results do not prove general
 Metal support. Positive standard Metal enumeration for the latest graphics
 pair, general shaders, presentation/display acceleration and broad stability
-remain incomplete. See [STATUS.md](STATUS.md).
+remain incomplete. The color quantization model is an unverified hypothesis.
+
+Development paused on 2026-10-07 with RTXProbe 0.83.1/native owner250 and the
+0.253 child/application sources. Standard enumeration 0.254 and a 32-draw AMD
+reference comparison were prepared but not hardware-validated. After the last
+cleanup reboot, a recovered clean boot was not confirmed; future hardware work
+must begin with a fresh observation of the test system.
 
 This repository contains **source code and tools only**. Raw GPU/machine dumps,
 host execution receipts, private connection helpers and historical deployment
@@ -59,8 +65,8 @@ personal machine records or credentials are included. Hardware experiments
 can hang/reboot a system; development requires a recoverable test machine and
 its owner's authorization. The repository does not load drivers automatically.
 
-See [THIRD_PARTY.md](THIRD_PARTY.md), [LICENSE](LICENSE), and
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Build instructions, dependencies and third-party notices are in
+[BUILDING.md](BUILDING.md). Original project code is covered by [LICENSE](LICENSE).
 
 ## Türkçe
 

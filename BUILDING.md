@@ -18,6 +18,10 @@ The Python subset covers boot layout, memory planning, startup protocol and RPC
 encoding. The C++ broker uses a CPU model. Neither opens a GPU or loads a kext.
 Other historical tests may require local fixtures that are not published.
 
+In a Git checkout, `python tools/verify_snapshot.py` checks the published file
+inventory. After editing sources, stage the intended files, run
+`python tools/verify_snapshot.py --write`, and stage the updated inventory.
+
 ## macOS components
 
 The latest parent source is in
@@ -55,3 +59,28 @@ Apply the retained standalone compiler patch to that matching source tree.
 The large vendor tree, compiler binaries and caches are not included. Its
 historical Windows build environment needs reconstruction; no fresh compiler
 toolchain rebuild is claimed here.
+
+## Dependencies and licenses
+
+The root MIT license covers original project code. Existing third-party
+notices remain applicable; firmware and SDK rights are not included.
+
+- **Mesa / NAK:** use the matching source and checksum above. Preserve upstream
+  file notices; the licensing overview is in
+  [LICENSES/Mesa-license.rst](LICENSES/Mesa-license.rst).
+- **NVIDIA:** firmware 570.144 and the board-specific VBIOS are separate inputs.
+  Generated firmware arrays are omitted. The preparation tools specify the
+  expected assets and hashes. Public register/class and protocol references
+  include [open-gpu-doc](https://github.com/NVIDIA/open-gpu-doc) and
+  [open-gpu-kernel-modules](https://github.com/NVIDIA/open-gpu-kernel-modules);
+  preserve notices on any reused reference code.
+- **tinygrad:** earlier bootstrap/memory work used revision
+  `33cd373ad35371ccb483c9645d0c0637a04debc2` of
+  [tinygrad](https://github.com/tinygrad/tinygrad). Its license is retained in
+  [LICENSES/tinygrad-MIT.txt](LICENSES/tinygrad-MIT.txt).
+- **Apple:** obtain Xcode, the SDK and Metal tools separately. No Apple SDK
+  headers, frameworks or compiler binaries are distributed here.
+
+The graphics catalog header contains program bytes compiled from the project's
+own shader, not proprietary NVIDIA firmware. Large vendor trees, compiled
+binaries and raw machine captures are excluded.

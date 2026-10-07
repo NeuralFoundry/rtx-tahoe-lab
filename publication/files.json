@@ -16,13 +16,8 @@
   },
   {
     "path": "BUILDING.md",
-    "bytes": 2801,
-    "sha256": "3350ca6df3304aa1b5abb1f887d16aeb5c7c9b5782f0b1f155a60b7a77f716bb"
-  },
-  {
-    "path": "CONTRIBUTING.md",
-    "bytes": 910,
-    "sha256": "13fbc79c2f138ba52496424b0ca9d7dcf3caaf62e256ec8bf91ca1fdefd1e3a9"
+    "bytes": 4393,
+    "sha256": "ee08a7b064b20597c660f8df705536d70b6f3b0e2b13588d411d0749de0c41aa"
   },
   {
     "path": "LICENSE",
@@ -41,18 +36,8 @@
   },
   {
     "path": "README.md",
-    "bytes": 3749,
-    "sha256": "1d68d49cb034030a487e3b16f02ea2aa49f3296ee64db88a4083ad1c29310ac9"
-  },
-  {
-    "path": "STATUS.md",
-    "bytes": 1300,
-    "sha256": "6a9b4666c927c39871970995038709c5c3b363e6f208d6c863a65bb6944a53b6"
-  },
-  {
-    "path": "THIRD_PARTY.md",
-    "bytes": 1949,
-    "sha256": "047250315290f9fd9446e31d9dfac28e1d8d7c904bee03ec05d8756bbbd22c7e"
+    "bytes": 4194,
+    "sha256": "11e0729e30d7d4c94daeb6afe62f7dfb5d82646064212e853b6e0dc42455a1d1"
   },
   {
     "path": "changes/metal-color-quantization-0.255/amd-reference-source-v1/cases255.hpp",
